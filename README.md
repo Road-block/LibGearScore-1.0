@@ -3,6 +3,13 @@ World of Warcraft Wrath (Classic) embeddable GearScore calculation library.
 Formulas from original GearScore/Lite by Mirrikat45.
 
 ## Usage/API
+0. If not using it standalone but embedded then in your addon .toc file or embeds.xml / libs.xml whatever is used to reference libraries.
+ ```
+ <path_to>LibStub.lua
+ <path_to>CallbackHandler-1.0.xml
+ <path_to>LibGearScore.lua
+ ```
+
 1. Get a reference to the library
  ```lua
  local LibGearScore = LibStub:GetLibrary("LibGearScore.1000",true)
