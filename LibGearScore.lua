@@ -50,7 +50,7 @@
 --     LibGearScore-1.0 does NOT initiate Inspects, it only passively monitors inspect results.
 -----------------------------------------------------------------------------------------------------------------------
 
-local MAJOR, MINOR = "LibGearScore.1000", 1
+local MAJOR, MINOR = "LibGearScore.1000", 2
 assert(LibStub, format("%s requires LibStub.", MAJOR))
 local lib, oldMinor = LibStub:NewLibrary(MAJOR, MINOR)
 
@@ -342,10 +342,10 @@ local function CacheScore(guid, unit)
     end
     if enClass == "HUNTER" then
       ItemScore = ItemScore * 0.3164
-      GearScore = GearScore + ItemScore * TitanGrip
-      ItemCount = ItemCount + 1
-      LevelTotal = LevelTotal + ItemLevel
     end
+    GearScore = GearScore + ItemScore * TitanGrip
+    ItemCount = ItemCount + 1
+    LevelTotal = LevelTotal + ItemLevel
   end
   for _, slot in ipairs(GS_ItemSlots) do
     local slotLink = GetUnitSlotLink(unit, slot)
