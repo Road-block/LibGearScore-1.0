@@ -1,5 +1,6 @@
 # LibGearScore-1.0
-World of Warcraft Wrath (Classic) embeddable GearScore calculation library
+World of Warcraft Wrath (Classic) embeddable GearScore calculation library.  
+Formulas from original GearScore/Lite by Mirrikat45.
 
 ## Usage/API
 1. Get a reference to the library
@@ -78,6 +79,8 @@ World of Warcraft Wrath (Classic) embeddable GearScore calculation library
     -- can for example monitor for the LibGearScore_ItemScore callback to have final item data
   end
   ```
+5. Testing
+ `/lib_gs` with a player targetted in-game.
 
 ## Notes
   **LibGearScore-1.0** does not initiate Inspects.  
