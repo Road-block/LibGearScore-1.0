@@ -70,6 +70,7 @@ Formulas from original GearScore/Lite by Mirrikat45.
  4.  Callbacks: 
   "LibGearScore_Update", "LibGearScore_ItemScore", "LibGearScore_ItemPending" events are sent by the library to addons registering for them.
   (requires LibStub) 
+  
   In addon code: (_addon is your addon object_)
   ```lua
   LibGearScore.RegisterCallback(addon, "LibGearScore_Update")
@@ -86,8 +87,9 @@ Formulas from original GearScore/Lite by Mirrikat45.
     -- can for example monitor for the LibGearScore_ItemScore callback to have final item data
   end
   ```
-5. Testing
- `/lib_gs` with a player targetted in-game.
+5. Testing 
+  
+  `/lib_gs` with a player targetted in-game.
 
 ## Notes
   **LibGearScore-1.0** does not initiate Inspects.  
