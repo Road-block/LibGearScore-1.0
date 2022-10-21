@@ -69,8 +69,8 @@ Formulas from original GearScore/Lite by Mirrikat45.
  
  4.  Callbacks: 
   "LibGearScore_Update", "LibGearScore_ItemScore", "LibGearScore_ItemPending" events are sent by the library to addons registering for them.
-  (requires LibStub)
-  In addon code:
+  (requires LibStub) 
+  In addon code: (_addon is your addon object_)
   ```lua
   LibGearScore.RegisterCallback(addon, "LibGearScore_Update")
   function addon:LibGearScore_Update(guid, gearScore) -- see (2a) for `gearScore` members
@@ -91,4 +91,4 @@ Formulas from original GearScore/Lite by Mirrikat45.
 
 ## Notes
   **LibGearScore-1.0** does not initiate Inspects.  
-  It passively caches and provides GearScore results from Inspections started by the player manually or by other addons.
+  It passively caches and provides GearScore results from Inspections started by the player manually or by other addons (including the addon embedding it)
