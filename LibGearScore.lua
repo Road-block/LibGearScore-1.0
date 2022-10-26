@@ -50,7 +50,7 @@
 --     LibGearScore-1.0 does NOT initiate Inspects, it only passively monitors inspect results.
 -----------------------------------------------------------------------------------------------------------------------
 
-local MAJOR, MINOR = "LibGearScore.1000", 2
+local MAJOR, MINOR = "LibGearScore.1000", 3
 assert(LibStub, format("%s requires LibStub.", MAJOR))
 local lib, oldMinor = LibStub:NewLibrary(MAJOR, MINOR)
 
@@ -461,6 +461,11 @@ function lib:GetScore(unitorguid)
   end
 end
 
+function lib:GetScoreColor(score)
+  local r,g,b, desc = GetScoreColor(score)
+  local colorObj = CreateColor(r,g,b)
+  return colorObj, desc
+end
 ---------------
 --- Testing ---
 ---------------
