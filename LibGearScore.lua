@@ -14,8 +14,12 @@
 --       PlayerRealm = PlayerRealm, -- Normalized Realm Name
 --       GearScore = GearScore, -- Number
 --       AvgItemLevel = AvgItemLevel, -- Number
+--       FLOPScore = FLOPScore, -- Number (bonus or minus itemlevels for Flame Leviathan vehicles)
+--       HeraldFails = hashTable, -- {slot = itemlevel}
 --       RawTime = RawTime, -- nilable: unixtime (can feed to date(fmt,RawTime) to get back human readable datetime)
 --       Color = color, -- nilable: ColorMixin
+--       FLOPColor = color, -- ColorMixin
+--       HeraldColor = color, -- ColorMixin
 --       Description = description -- nilable: String
 --     }
 --     PlayerName / PlayerRealm == _G.UKNOWNOBJECT or GearScore = 0 indicates failure to calculate
@@ -50,7 +54,7 @@
 --     LibGearScore-1.0 does NOT initiate Inspects, it only passively monitors inspect results.
 -----------------------------------------------------------------------------------------------------------------------
 
-local MAJOR, MINOR = "LibGearScore.1000", 3
+local MAJOR, MINOR = "LibGearScore.1000", 4
 assert(LibStub, format("%s requires LibStub.", MAJOR))
 local lib, oldMinor = LibStub:NewLibrary(MAJOR, MINOR)
 
@@ -68,9 +72,13 @@ local UnitGUID = _G.UnitGUID
 local UnitIsPlayer = _G.UnitIsPlayer
 local Item = _G.Item
 local After = _G.C_Timer.After
+local NewTicker = _G.C_Timer.NewTicker
 local CreateColor = _G.CreateColor
 local floor = _G.math.floor
 local max = _G.math.max
+local min = _G.math.min
+local modf = _G.math.modf
+
 local ScanTip = _G["LibGearScoreScanTooltip.1000"] or CreateFrame("GameTooltip", "LibGearScoreScanTooltip.1000", UIParent, "GameTooltipTemplate")
 lib.callbacks = lib.callbacks or LibStub:GetLibrary("CallbackHandler-1.0"):New(lib)
 
@@ -85,8 +93,10 @@ elseif WOW_PROJECT_ID == WOW_PROJECT_CLASSIC then
 end
 
 local MAX_SCORE = BRACKET_SIZE*6-1
+local BASELINE, ARMOR_MAX, WEAPON_MAX = 200, 239, 245
+local FLOPBASE, FLOPMAX = 3000, 4225
 
-local GS_ItemSlots = {
+local AllSlots = {
   _G.INVSLOT_HEAD,
   _G.INVSLOT_NECK,
   _G.INVSLOT_SHOULDER,
@@ -102,8 +112,86 @@ local GS_ItemSlots = {
   _G.INVSLOT_TRINKET2,
   _G.INVSLOT_BACK,
   _G.INVSLOT_MAINHAND,
---  _G.INVSLOT_OFFHAND, -- handled separately
+  _G.INVSLOT_OFFHAND,
   _G.INVSLOT_RANGED,
+}
+
+local SlotMap = {
+  [_G.INVSLOT_HEAD] = _G.HEADSLOT,
+  [_G.INVSLOT_NECK] = _G.NECKSLOT,
+  [_G.INVSLOT_SHOULDER] = _G.SHOULDERSLOT,
+  [_G.INVSLOT_CHEST] = _G.CHESTSLOT,
+  [_G.INVSLOT_WAIST] = _G.WAISTSLOT,
+  [_G.INVSLOT_LEGS] = _G.LEGSSLOT,
+  [_G.INVSLOT_FEET] = _G.FEETSLOT,
+  [_G.INVSLOT_WRIST] = _G.WRISTSLOT,
+  [_G.INVSLOT_HAND] = _G.HANDSSLOT,
+  [_G.INVSLOT_FINGER1] = _G.FINGER0SLOT,
+  [_G.INVSLOT_FINGER2] = _G.FINGER1SLOT,
+  [_G.INVSLOT_TRINKET1] = _G.TRINKET0SLOT,
+  [_G.INVSLOT_TRINKET2] = _G.TRINKET1SLOT,
+  [_G.INVSLOT_BACK] = _G.BACKSLOT,
+  [_G.INVSLOT_MAINHAND] = _G.MAINHANDSLOT,
+  [_G.INVSLOT_OFFHAND] = _G.SECONDARYHANDSLOT,
+  [_G.INVSLOT_RANGED] = _G.RANGEDSLOT,
+}
+
+local GS_ItemSlots = {
+  [_G.INVSLOT_HEAD] = true,
+  [_G.INVSLOT_NECK] = true,
+  [_G.INVSLOT_SHOULDER] = true,
+  [_G.INVSLOT_CHEST] = true,
+  [_G.INVSLOT_WAIST] = true,
+  [_G.INVSLOT_LEGS] = true,
+  [_G.INVSLOT_FEET] = true,
+  [_G.INVSLOT_WRIST] = true,
+  [_G.INVSLOT_HAND] = true,
+  [_G.INVSLOT_FINGER1] = true,
+  [_G.INVSLOT_FINGER2] = true,
+  [_G.INVSLOT_TRINKET1] = true,
+  [_G.INVSLOT_TRINKET2] = true,
+  [_G.INVSLOT_BACK] = true,
+  [_G.INVSLOT_MAINHAND] = true,
+  [_G.INVSLOT_OFFHAND] = false,
+  [_G.INVSLOT_RANGED] = true,
+}
+
+local Flop_ItemSlots = { -- 15
+  [_G.INVSLOT_HEAD] = true,
+  [_G.INVSLOT_NECK] = true,
+  [_G.INVSLOT_SHOULDER] = true,
+  [_G.INVSLOT_CHEST] = true,
+  [_G.INVSLOT_WAIST] = true,
+  [_G.INVSLOT_LEGS] = true,
+  [_G.INVSLOT_FEET] = true,
+  [_G.INVSLOT_WRIST] = true,
+  [_G.INVSLOT_HAND] = true,
+  [_G.INVSLOT_FINGER1] = true,
+  [_G.INVSLOT_FINGER2] = true,
+  [_G.INVSLOT_TRINKET1] = true,
+  [_G.INVSLOT_TRINKET2] = true,
+  [_G.INVSLOT_BACK] = true,
+  [_G.INVSLOT_MAINHAND] = true,
+}
+
+local Herald_ItemSlots = {
+  [_G.INVSLOT_HEAD] = ARMOR_MAX,
+  [_G.INVSLOT_NECK] = ARMOR_MAX,
+  [_G.INVSLOT_SHOULDER] = ARMOR_MAX,
+  [_G.INVSLOT_CHEST] = ARMOR_MAX,
+  [_G.INVSLOT_WAIST] = ARMOR_MAX,
+  [_G.INVSLOT_LEGS] = ARMOR_MAX,
+  [_G.INVSLOT_FEET] = ARMOR_MAX,
+  [_G.INVSLOT_WRIST] = ARMOR_MAX,
+  [_G.INVSLOT_HAND] = ARMOR_MAX,
+  [_G.INVSLOT_FINGER1] = ARMOR_MAX,
+  [_G.INVSLOT_FINGER2] = ARMOR_MAX,
+  [_G.INVSLOT_TRINKET1] = ARMOR_MAX,
+  [_G.INVSLOT_TRINKET2] = ARMOR_MAX,
+  [_G.INVSLOT_BACK] = ARMOR_MAX,
+  [_G.INVSLOT_MAINHAND] = WEAPON_MAX,
+  [_G.INVSLOT_OFFHAND] = WEAPON_MAX,
+  [_G.INVSLOT_RANGED] = WEAPON_MAX, -- check if INVTYPE_RELIC needs special handling
 }
 
 local GS_ItemTypes = {
@@ -196,6 +284,51 @@ local GS_Quality = {
     ["Description"] = _G.ITEM_QUALITY0_DESC
   },
 }
+local tCount = function(t)
+  local count = 0
+  for k,v in pairs(t) do
+    count = count + 1
+  end
+  return count
+end
+
+local colorPoor = ITEM_QUALITY_COLORS[LE_ITEM_QUALITY_POOR].color
+local gradientColors = {
+  ITEM_QUALITY_COLORS[LE_ITEM_QUALITY_UNCOMMON].color,
+  ITEM_QUALITY_COLORS[LE_ITEM_QUALITY_RARE].color,
+  ITEM_QUALITY_COLORS[LE_ITEM_QUALITY_EPIC].color,
+}
+local colorPass, colorFail = CreateColor(0,1,0,1), CreateColor(1,0,0,1)
+local function ColorGradient(percent, colors)
+  if not tonumber(percent) then return end
+  if tonumber(percent) > 1 then percent = 1 end
+  if tonumber(percent) < 0 then percent = 0 end
+
+  if not colors then
+    colors = gradientColors
+  end
+  local numColors = #colors
+
+  if percent >= 1 then
+    return colors[numColors]
+  elseif percent <= 0 then
+    return colors[1]
+  end
+
+  local segment, relative_percent = modf(percent*(numColors-1))
+  local rMin,gMin,bMin = colors[segment+1]:GetRGB()
+  local rMax,gMax,bMax = colors[segment+2]:GetRGB()
+
+  if ( not rMax or not gMax or not bMax ) then
+    return colors[1]
+  else
+    local r = rMin + (rMax - rMin)*relative_percent
+    local g = gMin + (gMax - gMin)*relative_percent
+    local b = bMin + (bMax - bMin)*relative_percent
+
+    return CreateColor(r,g,b,1)
+  end
+end
 
 local function ResolveGUID(unitorguid)
   if (unitorguid) then
@@ -270,15 +403,15 @@ end
 
 lib.ItemScoreData = setmetatable({},{__index = function(cache, item)
   local itemID, _, _, ItemEquipLoc = GetItemInfoInstant(item)
-  if not itemID then return {ItemScore=0, ItemLevel=0, Red=0.1, Green=0.1, Blue=0.1, Description=_G.UNKNOWNOBJECT} end
-  if not GS_ItemTypes[ItemEquipLoc] then return {ItemScore=0, ItemLevel=0, Red=0.1, Green=0.1, Blue=0.1, Description=_G.UNKNOWNOBJECT} end
+  if not itemID then return {ItemScore=0, ItemLevel=0, ItemQuality = LE_ITEM_QUALITY_POOR, Red=0.1, Green=0.1, Blue=0.1, Description=_G.UNKNOWNOBJECT} end
+  if not GS_ItemTypes[ItemEquipLoc] then return {ItemScore=0, ItemLevel=0, ItemQuality = LE_ITEM_QUALITY_POOR, Red=0.1, Green=0.1, Blue=0.1, Description=_G.UNKNOWNOBJECT} end
   local itemAsync = Item:CreateFromItemID(itemID)
   if itemAsync:IsItemDataCached() then
     local ItemLink = itemAsync:GetItemLink()
     local ItemRarity = itemAsync:GetItemQuality()
     local ItemLevel = itemAsync:GetCurrentItemLevel()
     local ItemScore, ItemLevel, Red, Green, Blue, Description = ItemScoreCalc(ItemRarity, ItemLevel, ItemEquipLoc)
-    local scoreData = {ItemScore=ItemScore,ItemLevel=ItemLevel,Red=Red,Green=Green,Blue=Blue,Description=Description}
+    local scoreData = {ItemScore=ItemScore,ItemLevel=ItemLevel,ItemQuality=ItemRarity,Red=Red,Green=Green,Blue=Blue,Description=Description}
     rawset(cache, item, scoreData)
     rawset(cache, ItemLink, scoreData)
     rawset(cache, itemID, scoreData)
@@ -290,13 +423,13 @@ lib.ItemScoreData = setmetatable({},{__index = function(cache, item)
       local ItemRarity = itemAsync:GetItemQuality()
       local ItemLevel = itemAsync:GetCurrentItemLevel()
       local ItemScore, ItemLevel, Red, Green, Blue, Description = ItemScoreCalc(ItemRarity, ItemLevel, ItemEquipLoc)
-      local scoreData = {ItemScore=ItemScore,ItemLevel=ItemLevel,Red=Red,Green=Green,Blue=Blue,Description=Description}
+      local scoreData = {ItemScore=ItemScore,ItemLevel=ItemLevel,ItemQuality=ItemRarity,Red=Red,Green=Green,Blue=Blue,Description=Description}
       rawset(cache, item, scoreData)
       rawset(cache, ItemLink, scoreData)
       rawset(cache, itemID, scoreData)
       lib.callbacks:Fire("LibGearScore_ItemPending", itemID)
     end)
-    return {ItemScore=0, ItemLevel=0, Red=0.1, Green=0.1, Blue=0.1, Description=_G.PENDING_INVITE}
+    return {ItemScore=0, ItemLevel=0, ItemQuality = LE_ITEM_QUALITY_POOR, Red=0.1, Green=0.1, Blue=0.1, Description=_G.PENDING_INVITE}
   end
 end})
 
@@ -311,11 +444,14 @@ local function CacheScore(guid, unit)
   if not PlayerName or PlayerName == _G.UNKNOWNOBJECT then return end
   if PlayerRealm == "" then PlayerRealm = GetNormalizedRealmName() end
   local GearScore = 0
+  local FLOPScore
+  local HeraldFails = {}
   local ItemCount = 0
   local LevelTotal = 0
   local TitanGrip = 1
   local ItemScore = 0
   local ItemLevel = 0
+  local ItemQuality = 0
   local AvgItemLevel = 0
   local Description
   local mainHandLink = GetUnitSlotLink(unit, _G.INVSLOT_MAINHAND)
@@ -347,11 +483,11 @@ local function CacheScore(guid, unit)
     ItemCount = ItemCount + 1
     LevelTotal = LevelTotal + ItemLevel
   end
-  for _, slot in ipairs(GS_ItemSlots) do
+  for _, slot in ipairs(AllSlots) do
     local slotLink = GetUnitSlotLink(unit, slot)
     if slotLink then
       local _, scoreData = lib:GetItemScore(slotLink)
-      ItemScore, ItemLevel, Description = scoreData.ItemScore, scoreData.ItemLevel, scoreData.Description
+      ItemScore, ItemLevel, ItemQuality, Description = scoreData.ItemScore, scoreData.ItemLevel, scoreData.ItemQuality, scoreData.Description
       if Description == _G.UNKNOWNOBJECT then return end
       if Description == _G.PENDING_INVITE then
         After(0.1, function()
@@ -359,19 +495,42 @@ local function CacheScore(guid, unit)
           return
         end)
       end
-      if enClass == "HUNTER" then
+      if GS_ItemSlots[slot] then
+        if enClass == "HUNTER" then
+          if slot == _G.INVSLOT_MAINHAND then
+            ItemScore = ItemScore * 0.3164
+          elseif slot == _G.INVSLOT_RANGED then
+            ItemScore = ItemScore * 5.3224
+          end
+        end
         if slot == _G.INVSLOT_MAINHAND then
-          ItemScore = ItemScore * 0.3164
-        elseif slot == _G.INVSLOT_RANGED then
-          ItemScore = ItemScore * 5.3224
+          ItemScore = ItemScore * TitanGrip
+        end
+        GearScore = GearScore + ItemScore
+        ItemCount = ItemCount + 1
+        LevelTotal = LevelTotal + ItemLevel
+      end
+      if Flop_ItemSlots[slot] then
+        if ItemQuality >= LE_ITEM_QUALITY_EPIC then
+          FLOPScore = (FLOPScore or 0) + (ItemLevel - BASELINE)
+        else
+          local qualPenalty = (LE_ITEM_QUALITY_EPIC - ItemQuality) * 13
+          FLOPScore = (ItemLevel - BASELINE) - qualPenalty
         end
       end
-      if slot == _G.INVSLOT_MAINHAND then
-        ItemScore = ItemScore * TitanGrip
+      if Herald_ItemSlots[slot] then
+        if ItemLevel > Herald_ItemSlots[slot] then
+          HeraldFails[slot] = ItemLevel
+        else
+          if HeraldFails[slot] then
+            HeraldFails[slot] = nil
+          end
+        end
       end
-      GearScore = GearScore + ItemScore
-      ItemCount = ItemCount + 1
-      LevelTotal = LevelTotal + ItemLevel
+    else
+      if Flop_ItemSlots[slot] then
+        FLOPScore = (FLOPScore or 0) - BASELINE
+      end
     end
   end
   if GearScore > 0 and ItemCount > 0 then
@@ -381,7 +540,21 @@ local function CacheScore(guid, unit)
     local TimeStamp = date("%Y%m%d%H%M%S",RawTime) -- 20221017133545 (YYYYMMDDHHMMSS)
     local r,g,b, description = GetScoreColor(GearScore)
     local color = CreateColor(r,g,b,1)
-    local scoreData = {TimeStamp = TimeStamp, PlayerName = PlayerName, PlayerRealm = PlayerRealm, GearScore = GearScore, AvgItemLevel = AvgItemLevel, RawTime = RawTime, Color = color, Description = description}
+    local flopColor
+    if FLOPScore then
+      if FLOPScore < 0 then
+        flopColor = colorPoor
+      else
+        flopColor = ColorGradient(FLOPScore/(FLOPMAX-FLOPBASE))
+      end
+    end
+    local heraldColor
+    if tCount(HeraldFails) > 0 then
+      heraldColor = colorFail
+    else
+      heraldColor = colorPass
+    end
+    local scoreData = {TimeStamp = TimeStamp, PlayerName = PlayerName, PlayerRealm = PlayerRealm, GearScore = GearScore, AvgItemLevel = AvgItemLevel, FLOPScore = FLOPScore, HeraldFails = HeraldFails, RawTime = RawTime, Color = color, FLOPColor = flopColor, HeraldColor = heraldColor, Description = description}
     lib.PlayerScoreData[guid] = scoreData
     lib.callbacks:Fire("LibGearScore_Update", guid, scoreData)
   end
@@ -476,16 +649,28 @@ local function TargetScore()
     local guid, scoreData = lib:GetScore("target")
     if scoreData then
       if scoreData.PlayerName == _G.UNKNOWNOBJECT then
-        print(format("No GearScore available for '%s'. Try inspecting first.",(UnitName("target"))))
+        print(format("No Gearcheck available for '%s'. Try inspecting first.",(UnitName("target"))))
       else
-        print(format("%s's GS: ",scoreData.PlayerName)..scoreData.Color:WrapTextInColorCode(scoreData.GearScore))
+        print("GearScore: "..scoreData.Color:WrapTextInColorCode(scoreData.GearScore))
+        if scoreData.FLOPScore then
+          print("Leviathan: "..scoreData.FLOPColor:WrapTextInColorCode(scoreData.FLOPScore))
+        end
+        if tCount(scoreData.HeraldFails) > 0 then
+          print("Herald: "..scoreData.HeraldColor:WrapTextInColorCode(_G.NO))
+          for k,v in pairs(scoreData.HeraldFails) do
+            print(format("  %s:%s",SlotMap[k],scoreData.HeraldColor:WrapTextInColorCode(v)))
+          end
+        else
+          print("HeraldCheck: "..scoreData.HeraldColor:WrapTextInColorCode(_G.YES))
+        end
       end
     else
-      print(format("No GearScore data available for '%s'. Try inspecting first.",(UnitName("target"))))
+      print(format("No Gearcheck data available for '%s'. Try inspecting first.",(UnitName("target"))))
     end
   else
-    print(format("Can't get GearScore information for that target:%s",(UnitName("target")) or _G.TARGET_TOKEN_NOT_FOUND))
+    print(format("Can't get Gearcheck information for that target:%s",(UnitName("target")) or _G.TARGET_TOKEN_NOT_FOUND))
   end
 end
 SLASH_LibGearScore1 = "/lib_gs"
+SLASH_LibGearScore2 = "/lib_gearscore"
 _G.SlashCmdList["LibGearScore"] = TargetScore
