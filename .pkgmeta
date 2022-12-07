@@ -1,0 +1,6 @@
+package-as: LibGearScore-1.0
+enable-nolib-creation: no
+
+ignore:
+  - .gitignore
+  - .pkgmeta

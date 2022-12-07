@@ -54,7 +54,7 @@
 --     LibGearScore-1.0 does NOT initiate Inspects, it only passively monitors inspect results.
 -----------------------------------------------------------------------------------------------------------------------
 
-local MAJOR, MINOR = "LibGearScore.1000", 4
+local MAJOR, MINOR = "LibGearScore.1000", 5
 assert(LibStub, format("%s requires LibStub.", MAJOR))
 local lib, oldMinor = LibStub:NewLibrary(MAJOR, MINOR)
 
@@ -69,6 +69,7 @@ local CheckInteractDistance = _G.CheckInteractDistance
 local UnitIsVisible = _G.UnitIsVisible
 local GetServerTime = _G.GetServerTime
 local UnitGUID = _G.UnitGUID
+local UnitLevel = _G.UnitLevel
 local UnitIsPlayer = _G.UnitIsPlayer
 local Item = _G.Item
 local After = _G.C_Timer.After
@@ -125,10 +126,10 @@ local SlotMap = {
   [_G.INVSLOT_FEET] = _G.FEETSLOT,
   [_G.INVSLOT_WRIST] = _G.WRISTSLOT,
   [_G.INVSLOT_HAND] = _G.HANDSSLOT,
-  [_G.INVSLOT_FINGER1] = _G.FINGER0SLOT,
-  [_G.INVSLOT_FINGER2] = _G.FINGER1SLOT,
-  [_G.INVSLOT_TRINKET1] = _G.TRINKET0SLOT,
-  [_G.INVSLOT_TRINKET2] = _G.TRINKET1SLOT,
+  [_G.INVSLOT_FINGER1] = _G.FINGER0SLOT.."1",
+  [_G.INVSLOT_FINGER2] = _G.FINGER1SLOT.."2",
+  [_G.INVSLOT_TRINKET1] = _G.TRINKET0SLOT.."1",
+  [_G.INVSLOT_TRINKET2] = _G.TRINKET1SLOT.."2",
   [_G.INVSLOT_BACK] = _G.BACKSLOT,
   [_G.INVSLOT_MAINHAND] = _G.MAINHANDSLOT,
   [_G.INVSLOT_OFFHAND] = _G.SECONDARYHANDSLOT,
@@ -296,6 +297,7 @@ local gradientColors = {
   ITEM_QUALITY_COLORS[LE_ITEM_QUALITY_UNCOMMON].color,
   ITEM_QUALITY_COLORS[LE_ITEM_QUALITY_RARE].color,
   ITEM_QUALITY_COLORS[LE_ITEM_QUALITY_EPIC].color,
+  ITEM_QUALITY_COLORS[LE_ITEM_QUALITY_LEGENDARY].color,
 }
 local colorPass, colorFail = CreateColor(0,1,0,1), CreateColor(1,0,0,1)
 local function ColorGradient(percent, colors)
@@ -379,7 +381,7 @@ local function ItemScoreCalc(ItemRarity, ItemLevel, ItemEquipLoc)
   local Table
   local QualityScale = 1
   local GearScore = 0
-  local unitLevel = lib.inspecting and lib.inspecting.level or MAX_PLAYER_LEVEL
+  local unitLevel = lib.inspecting and lib.inspecting.level or UnitLevel("player")
   local Scale = 1.8618
   if (ItemRarity == 5) then
     QualityScale = 1.3
@@ -410,6 +412,7 @@ local function ItemScoreCalc(ItemRarity, ItemLevel, ItemEquipLoc)
   end
 end
 
+lib.ItemStale = {}
 lib.ItemScoreData = setmetatable({},{__index = function(cache, item)
   local itemID, _, _, ItemEquipLoc = GetItemInfoInstant(item)
   if not itemID then return {ItemScore=0, ItemLevel=0, ItemQuality = LE_ITEM_QUALITY_POOR, Red=0.1, Green=0.1, Blue=0.1, Description=_G.UNKNOWNOBJECT} end
@@ -421,6 +424,9 @@ lib.ItemScoreData = setmetatable({},{__index = function(cache, item)
     local ItemLevelCurrent = itemAsync:GetCurrentItemLevel()
     local ItemScore, ItemLevel, Red, Green, Blue, Description = ItemScoreCalc(ItemRarity, ItemLevelCurrent, ItemEquipLoc)
     local scoreData = {ItemScore=ItemScore,ItemLevel=ItemLevel,ItemQuality=ItemRarity,Red=Red,Green=Green,Blue=Blue,Description=Description}
+    if ItemRarity == LE_ITEM_QUALITY_HEIRLOOM then
+      lib.ItemStale[itemID] = {item,ItemLink}
+    end
     rawset(cache, item, scoreData)
     rawset(cache, ItemLink, scoreData)
     rawset(cache, itemID, scoreData)
@@ -433,6 +439,9 @@ lib.ItemScoreData = setmetatable({},{__index = function(cache, item)
       local ItemLevelCurrent = itemAsync:GetCurrentItemLevel()
       local ItemScore, ItemLevel, Red, Green, Blue, Description = ItemScoreCalc(ItemRarity, ItemLevelCurrent, ItemEquipLoc)
       local scoreData = {ItemScore=ItemScore,ItemLevel=ItemLevel,ItemQuality=ItemRarity,Red=Red,Green=Green,Blue=Blue,Description=Description}
+      if ItemRarity == LE_ITEM_QUALITY_HEIRLOOM then
+        lib.ItemStale[itemID] = {item,ItemLink}
+      end
       rawset(cache, item, scoreData)
       rawset(cache, ItemLink, scoreData)
       rawset(cache, itemID, scoreData)
@@ -633,6 +642,19 @@ hooksecurefunc("ClearInspectPlayer",lib.ClearInspectPlayer)
 function lib:GetItemScore(item)
   local itemID = GetItemInfoInstant(item)
   if itemID then
+    if lib.ItemStale[itemID] then -- invalidate heirlooms
+      local entry1, entry2 = lib.ItemStale[itemID][1], lib.ItemStale[itemID][2]
+      if rawget(lib.ItemScoreData,itemID) then
+        rawset(lib.ItemScoreData,itemID,nil)
+      end
+      if entry1 and rawget(lib.ItemScoreData,entry1) then
+        rawset(lib.ItemScoreData,entry1,nil)
+      end
+      if entry2 and rawget(lib.ItemScoreData,entry2) then
+        rawset(lib.ItemScoreData,entry2,nil)
+      end
+      lib.ItemStale[itemID] = nil
+    end
     return itemID, lib.ItemScoreData[item]
   end
 end
@@ -649,6 +671,11 @@ function lib:GetScoreColor(score)
   local colorObj = CreateColor(r,g,b)
   return colorObj, desc
 end
+
+function lib:GetSlotName(slot)
+  return SlotMap[slot] or slot
+end
+
 ---------------
 --- Testing ---
 ---------------

@@ -7,7 +7,7 @@
 ## X-Category: Library
 ## X-License: Limited BSD
 ## X-Credits: Mirrikat45
-## Version: 1.0
+## Version: 1.0.r5
 
 Libs\LibStub\LibStub.lua
 Libs\CallbackHandler-1.0\CallbackHandler-1.0.xml
