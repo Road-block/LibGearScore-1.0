@@ -72,7 +72,6 @@ local UnitGUID = _G.UnitGUID
 local UnitIsPlayer = _G.UnitIsPlayer
 local Item = _G.Item
 local After = _G.C_Timer.After
-local NewTicker = _G.C_Timer.NewTicker
 local CreateColor = _G.CreateColor
 local floor = _G.math.floor
 local max = _G.math.max
@@ -91,7 +90,7 @@ elseif WOW_PROJECT_ID == WOW_PROJECT_BURNING_CRUSADE_CLASSIC then
 elseif WOW_PROJECT_ID == WOW_PROJECT_CLASSIC then
   BRACKET_SIZE = 200
 end
-
+local MAX_PLAYER_LEVEL = MAX_PLAYER_LEVEL_TABLE[LE_EXPANSION_LEVEL_CURRENT]
 local MAX_SCORE = BRACKET_SIZE*6-1
 local BASELINE, ARMOR_MAX, WEAPON_MAX = 200, 239, 245
 local FLOPBASE, FLOPMAX = 3000, 4225
@@ -330,6 +329,18 @@ local function ColorGradient(percent, colors)
   end
 end
 
+local function heirloomLevel(unitLevel)
+  if unitLevel < 60 then
+    return unitLevel
+  elseif unitLevel < 70 then
+    return 3*(unitLevel-60)+85
+  elseif unitLevel <= 80 then
+    return 4*(unitLevel-70)+147
+  else
+    return 1
+  end
+end
+
 local function ResolveGUID(unitorguid)
   if (unitorguid) then
     if (GUIDIsPlayer(unitorguid)) then
@@ -368,6 +379,7 @@ local function ItemScoreCalc(ItemRarity, ItemLevel, ItemEquipLoc)
   local Table
   local QualityScale = 1
   local GearScore = 0
+  local unitLevel = lib.inspecting and lib.inspecting.level or MAX_PLAYER_LEVEL
   local Scale = 1.8618
   if (ItemRarity == 5) then
     QualityScale = 1.3
@@ -380,7 +392,7 @@ local function ItemScoreCalc(ItemRarity, ItemLevel, ItemEquipLoc)
     ItemRarity = 2
   elseif (ItemRarity == 7) then
     ItemRarity = 3
-    ItemLevel = 187.05
+    ItemLevel = heirloomLevel(unitLevel)
   end
   if (ItemLevel > 120) then
     Table = GS_Formula["A"]
@@ -390,9 +402,6 @@ local function ItemScoreCalc(ItemRarity, ItemLevel, ItemEquipLoc)
   if ((ItemRarity >= 2) and (ItemRarity <= 4)) then
     local Red, Green, Blue, Description = GetScoreColor((floor(((ItemLevel - Table[ItemRarity].A) / Table[ItemRarity].B) * 1 * Scale)) * 11.25)
     GearScore = floor(((ItemLevel - Table[ItemRarity].A) / Table[ItemRarity].B) * GS_ItemTypes[ItemEquipLoc].SlotMOD * Scale * QualityScale)
-    if (ItemLevel == 187.05) then
-      ItemLevel = 0
-    end
     if (GearScore < 0) then
       GearScore = 0
       Red, Green, Blue, Description = GetScoreColor(1)
@@ -409,8 +418,8 @@ lib.ItemScoreData = setmetatable({},{__index = function(cache, item)
   if itemAsync:IsItemDataCached() then
     local ItemLink = itemAsync:GetItemLink()
     local ItemRarity = itemAsync:GetItemQuality()
-    local ItemLevel = itemAsync:GetCurrentItemLevel()
-    local ItemScore, ItemLevel, Red, Green, Blue, Description = ItemScoreCalc(ItemRarity, ItemLevel, ItemEquipLoc)
+    local ItemLevelCurrent = itemAsync:GetCurrentItemLevel()
+    local ItemScore, ItemLevel, Red, Green, Blue, Description = ItemScoreCalc(ItemRarity, ItemLevelCurrent, ItemEquipLoc)
     local scoreData = {ItemScore=ItemScore,ItemLevel=ItemLevel,ItemQuality=ItemRarity,Red=Red,Green=Green,Blue=Blue,Description=Description}
     rawset(cache, item, scoreData)
     rawset(cache, ItemLink, scoreData)
@@ -421,8 +430,8 @@ lib.ItemScoreData = setmetatable({},{__index = function(cache, item)
     itemAsync:ContinueOnItemLoad(function()
       local ItemLink = itemAsync:GetItemLink()
       local ItemRarity = itemAsync:GetItemQuality()
-      local ItemLevel = itemAsync:GetCurrentItemLevel()
-      local ItemScore, ItemLevel, Red, Green, Blue, Description = ItemScoreCalc(ItemRarity, ItemLevel, ItemEquipLoc)
+      local ItemLevelCurrent = itemAsync:GetCurrentItemLevel()
+      local ItemScore, ItemLevel, Red, Green, Blue, Description = ItemScoreCalc(ItemRarity, ItemLevelCurrent, ItemEquipLoc)
       local scoreData = {ItemScore=ItemScore,ItemLevel=ItemLevel,ItemQuality=ItemRarity,Red=Red,Green=Green,Blue=Blue,Description=Description}
       rawset(cache, item, scoreData)
       rawset(cache, ItemLink, scoreData)
@@ -439,7 +448,7 @@ local function GetUnitSlotLink(unit, slot)
   return GetInventoryItemLink(unit, slot) or select(2, ScanTip:GetItem())
 end
 
-local function CacheScore(guid, unit)
+local function CacheScore(guid, unit, level)
   local _, enClass, _, _, _, PlayerName, PlayerRealm = GetPlayerInfoByGUID(guid)
   if not PlayerName or PlayerName == _G.UNKNOWNOBJECT then return end
   if PlayerRealm == "" then PlayerRealm = GetNormalizedRealmName() end
@@ -472,7 +481,7 @@ local function CacheScore(guid, unit)
     if Description == _G.UNKNOWNOBJECT then return end
     if Description == _G.PENDING_INVITE then
       After(0.1, function()
-        CacheScore(guid, unit)
+        CacheScore(guid, unit, level)
         return
       end)
     end
@@ -491,7 +500,7 @@ local function CacheScore(guid, unit)
       if Description == _G.UNKNOWNOBJECT then return end
       if Description == _G.PENDING_INVITE then
         After(0.1, function()
-          CacheScore(guid, unit)
+          CacheScore(guid, unit, level)
           return
         end)
       end
@@ -511,11 +520,12 @@ local function CacheScore(guid, unit)
         LevelTotal = LevelTotal + ItemLevel
       end
       if Flop_ItemSlots[slot] then
+        if ItemQuality == LE_ITEM_QUALITY_HEIRLOOM then ItemQuality = LE_ITEM_QUALITY_RARE end
         if ItemQuality >= LE_ITEM_QUALITY_EPIC then
           FLOPScore = (FLOPScore or 0) + (ItemLevel - BASELINE)
         else
-          local qualPenalty = (LE_ITEM_QUALITY_EPIC - ItemQuality) * 13
-          FLOPScore = (ItemLevel - BASELINE) - qualPenalty
+          local qualityTax = (LE_ITEM_QUALITY_EPIC - ItemQuality) * 13
+          FLOPScore = (FLOPScore or 0) + (ItemLevel - BASELINE) - qualityTax
         end
       end
       if Herald_ItemSlots[slot] then
@@ -579,15 +589,15 @@ lib.OnEvent = function(_,event,...)
 end
 lib.eventFrame:SetScript("OnEvent",lib.OnEvent)
 function lib:PLAYER_EQUIPMENT_CHANGED(event,...)
-  local guid, unit = UnitGUID("player"), "player"
-  CacheScore(guid,unit)
+  local guid, unit, level = UnitGUID("player"), "player", UnitLevel("player")
+  CacheScore(guid,unit,level)
 end
 function lib:UNIT_INVENTORY_CHANGED(event,...)
   local unit = ...
   if unit and UnitIsPlayer(unit) then
-    local guid = UnitGUID(unit)
+    local guid, level = UnitGUID(unit), UnitLevel(unit)
     if lib.inspecting and lib.inspecting.guid == guid then
-      CacheScore(guid, unit)
+      CacheScore(guid, unit, level)
     end
   end
 end
@@ -596,19 +606,19 @@ function lib:INSPECT_READY(event,...)
   if self.inspecting and self.inspecting.guid == guid then
     if self.inspecting.unit and UnitIsVisible(self.inspecting.unit) then
       if CanInspect(self.inspecting.unit,false) and CheckInteractDistance(self.inspecting.unit,1) then
-        CacheScore(self.inspecting.guid, self.inspecting.unit)
+        CacheScore(self.inspecting.guid, self.inspecting.unit, self.inspecting.level)
       end
     end
   end
 end
 function lib:PLAYER_ENTERING_WORLD(event,...)
-  local guid = UnitGUID("player")
-  CacheScore(guid, "player")
+  local guid, level = UnitGUID("player"), UnitLevel("player")
+  CacheScore(guid, "player", level)
 end
 function lib.NotifyInspect(unit)
   if unit and UnitIsPlayer(unit) then
-    local guid = UnitGUID(unit)
-    lib.inspecting = {guid=guid,unit=unit}
+    local guid, level = UnitGUID(unit), UnitLevel(unit)
+    lib.inspecting = {guid=guid,unit=unit,level=level}
   end
 end
 function lib.ClearInspectPlayer()
