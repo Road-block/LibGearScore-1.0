@@ -58,7 +58,7 @@
 --     LibGearScore-1.0 does NOT initiate Inspects, it only passively monitors inspect results.
 -----------------------------------------------------------------------------------------------------------------------
 
-local MAJOR, MINOR = "LibGearScore.1000", 8
+local MAJOR, MINOR = "LibGearScore.1000", 9
 assert(LibStub, format("%s requires LibStub.", MAJOR))
 local lib, oldMinor = LibStub:NewLibrary(MAJOR, MINOR)
 
@@ -69,7 +69,14 @@ local GetPlayerInfoByGUID = _G.GetPlayerInfoByGUID
 local GetNormalizedRealmName = _G.GetNormalizedRealmName
 local GetItemInfoInstant = _G.GetItemInfoInstant
 local CanInspect = _G.CanInspect
-local CheckInteractDistance = _G.CheckInteractDistance
+local InCombatLockdown = _G.InCombatLockdown
+local CheckInteractDistance = function(unit, distIdx)
+  if InCombatLockdown() then
+    return false
+  else
+    return _G.CheckInteractDistance(unit, distIdx)
+  end
+end
 local UnitIsVisible = _G.UnitIsVisible
 local GetServerTime = _G.GetServerTime
 local UnitGUID = _G.UnitGUID
